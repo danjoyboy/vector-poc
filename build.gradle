@@ -1,0 +1,73 @@
+plugins {
+	id 'org.jetbrains.kotlin.jvm' version '2.1.0'
+	id 'org.jetbrains.kotlin.plugin.spring' version '2.1.0'
+	id 'org.springframework.boot' version '3.4.5'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.poc'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+bootJar {
+	enabled = false
+}
+
+jar {
+	enabled = true
+}
+
+repositories {
+	mavenCentral()
+}
+
+configurations {
+	compileClasspath {
+		resolutionStrategy.activateDependencyLocking()
+	}
+
+	all {
+		exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+	}
+}
+
+subprojects {
+	group = 'com.poc'
+	version = '0.0.1-SNAPSHOT'
+
+	repositories {
+		mavenCentral()
+	}
+
+	tasks.register('resolveAndLockAll') {
+		notCompatibleWithConfigurationCache("Filters configurations at execution time")
+		doFirst {
+			assert gradle.startParameter.writeDependencyLocks : "$path must be run from the command line with the `--write-locks` flag"
+		}
+		doLast {
+			configurations.findAll {
+				// Add any custom filtering on the configurations to be resolved
+				it.canBeResolved
+			}.each { it.resolve() }
+		}
+	}
+
+	kotlin {
+		jvmToolchain(21)
+	}
+
+	dependencyLocking {
+		lockAllConfigurations()
+	}
+
+	configurations {
+		all {
+			exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+		}
+	}
+}

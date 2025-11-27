@@ -1,0 +1,20 @@
+apply plugin: "org.springframework.boot"
+apply plugin: "io.spring.dependency-management"
+
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+}
+
+dependencies {
+    implementation "com.lmax:disruptor:4.0.0"
+    implementation "org.springframework.boot:spring-boot-starter:$spring_boot_version"
+    implementation "org.springframework.boot:spring-boot-starter-actuator:$spring_boot_version"
+    implementation "org.springframework.boot:spring-boot-starter-log4j2:$spring_boot_version"
+    implementation "org.springframework.boot:spring-boot-starter-validation:$spring_boot_version"
+    implementation "org.springframework.boot:spring-boot-starter-web:$spring_boot_version"
+    implementation "org.springframework.boot:spring-boot-starter-test:$spring_boot_version"
+}

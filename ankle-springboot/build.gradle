@@ -1,0 +1,52 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '2.1.0'
+    id 'org.jetbrains.kotlin.plugin.spring' version '2.1.0'
+    id 'org.springframework.boot' version '3.4.5'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.jetbrains.kotlin.plugin.atomicfu' version '2.2.21'
+}
+
+group = 'com.poc'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+bootRun {
+    jvmArgs = project.findProperty("jvmArgs")?.split("\\s+") ?: []
+}
+
+repositories {
+    mavenCentral()
+}
+
+apply from: "$rootDir/gradle/scripts/kotlin.gradle"
+apply from: "$rootDir/gradle/scripts/springboot.gradle"
+
+bootJar {
+    enabled = true
+}
+
+dependencies {
+    // library
+    implementation 'com.fasterxml.jackson.module:jackson-module-kotlin'
+    implementation 'org.jetbrains.kotlin:kotlin-reflect'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation "org.jetbrains.kotlinx:atomicfu:0.25.0"
+
+    // test
+    testImplementation "org.springframework.boot:spring-boot-starter-test:$spring_boot_version"
+}
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll '-Xjsr305=strict'
+    }
+}
+
+dependencyLocking {
+    lockAllConfigurations()
+}

@@ -1,0 +1,75 @@
+services:
+  backend:
+    container_name: vector-poc-backend
+    build:
+      context: .
+      dockerfile: ankle.dockerfile
+    volumes:
+      - .:/app
+      - app-logs:/var/log/app
+    working_dir: /app
+    # Redirect logs to file while also showing in stdout
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["java -jar /runtime/app.jar 2>&1 | tee -a /var/log/app/app.log"]
+    ports:
+      - "9000:9000"
+    networks:
+      - vector-network
+
+  vector-agent:
+    container_name: vector-poc-agent
+    image: timberio/vector:0.34.2-alpine
+    environment:
+      KUBERNETES_NAMESPACE: vector-poc
+      HOSTNAME: vector-poc-agent
+      POD_IP: 172.18.0.3
+      NODE_NAME: docker-compose
+      POSTGRES_USER: vector_user
+      POSTGRES_PASSWORD: vector_user
+      POSTGRES_HOST: postgresql
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: logs
+    volumes:
+      - ./argocd/vector/configs/vector.yaml:/etc/vector/vector.yaml:ro
+      - app-logs:/var/log/app:ro
+      - vector-data:/var/lib/vector
+      - vector-logs:/var/log/vector
+    command: ["--config", "/etc/vector/vector.yaml"]
+    ports:
+      - "8686:8686"
+    depends_on:
+      - backend
+      - postgresql
+    networks:
+      - vector-network
+
+  postgresql:
+    container_name: vector-poc-postgresql
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: logs
+      POSTGRES_USER: vector_user
+      POSTGRES_PASSWORD: vector_user
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-logs:/var/log/postgresql
+    ports:
+      - "5432:5432"
+    networks:
+      - vector-network
+
+volumes:
+  app-logs:
+    driver: local
+  vector-data:
+    driver: local
+  vector-logs:
+    driver: local
+  postgres-data:
+    driver: local
+  postgres-logs:
+    driver: local
+
+networks:
+  vector-network:
+    driver: bridge

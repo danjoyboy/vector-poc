@@ -1,0 +1,110 @@
+# Vector sidecar configuration for Kubernetes with PostgreSQL
+data_dir: /var/lib/vector
+
+sources:
+  app_logs:
+    type: file
+    include:
+      - /var/log/app/*.log
+    read_from: end
+    glob_minimum_cooldown_ms: 1000
+    max_line_bytes: 102400
+
+transforms:
+  parse_logs:
+    type: remap
+    inputs:
+      - app_logs
+    source: |
+      # Parse JSON if applicable
+      if starts_with(string!(.message), "{") {
+        parsed, err = parse_json(.message)
+        if err == null {
+          . = merge(., parsed) ?? .
+        }
+      }
+
+      # Add metadata
+      .timestamp = now()
+      .service = "vector-poc-backend"
+      .namespace = "${KUBERNETES_NAMESPACE:vector-poc}"
+      .pod_name = "${HOSTNAME}"
+      .pod_ip = "${POD_IP}"
+      .node_name = "${NODE_NAME}"
+      .environment = "kubernetes"
+
+      # Extract log level
+      if contains(string!(.message), "INFO") {
+        .level = "INFO"
+      } else if contains(string!(.message), "ERROR") {
+        .level = "ERROR"
+      } else if contains(string!(.message), "WARN") {
+        .level = "WARN"
+      } else if contains(string!(.message), "DEBUG") {
+        .level = "DEBUG"
+      }
+
+  filter_logs:
+    type: filter
+    inputs:
+      - parse_logs
+    condition:
+      type: vrl
+      source: |
+        .message != "" && .message != null
+
+  prepare_for_postgres:
+    type: remap
+    inputs:
+      - filter_logs
+    source: |
+      # Prepare data for PostgreSQL
+      .id = uuid_v4()
+      .created_at = format_timestamp!(.timestamp, "%Y-%m-%d %H:%M:%S", "UTC")
+
+      # Ensure all required fields exist with defaults
+      if !exists(.level) { .level = "INFO" }
+      if !exists(.service) { .service = "unknown" }
+      if !exists(.namespace) { .namespace = "default" }
+      if !exists(.pod_name) { .pod_name = "unknown" }
+      if !exists(.pod_ip) { .pod_ip = "0.0.0.0" }
+      if !exists(.node_name) { .node_name = "unknown" }
+      if !exists(.environment) { .environment = "unknown" }
+
+      # Truncate message if too long
+      if exists(.message) && length(string!(.message)) > 4000 {
+        .message = slice!(string!(.message), 0, 4000)
+      }
+
+sinks:
+  console:
+    type: console
+    inputs:
+      - filter_logs
+    encoding:
+      codec: json
+    target: stdout
+
+  file:
+    type: file
+    inputs:
+      - filter_logs
+    path: /var/log/vector/logs-%Y%m%d.json
+    encoding:
+      codec: json
+      method: newline_delimited
+
+  postgres:
+    type: postgres
+    inputs:
+      - prepare_for_postgres
+    endpoint: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DATABASE}"
+    table: "application_logs"
+
+api:
+  enabled: true
+  address: "0.0.0.0:8686"
+
+healthchecks:
+  enabled: true
+  require_healthy: true

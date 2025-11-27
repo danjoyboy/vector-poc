@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: "cat-ankle"
+  profiles:
+    active: dev
+  aop:
+    proxy-target-class: false
+server:
+  port: 9000

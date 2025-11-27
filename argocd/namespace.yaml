@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vector-poc
+  labels:
+    name: vector-poc
+    purpose: logging-poc

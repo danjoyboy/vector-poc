@@ -1,0 +1,16 @@
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+rootProject.name = 'vector-poc'
+
+def includeSubdirectories() {
+    def currentDir = rootProject.projectDir
+    currentDir.eachDirRecurse { subDir ->
+        if (subDir.toString().contains(".gradle")) return
+        if (subDir.toString().contains("gradle")) return
+        if (file("$subDir/build.gradle").exists())
+            include "${subDir.path.substring(currentDir.path.length()).replace(File.separator, ":")}"
+    }
+}
+
+includeSubdirectories()
