@@ -1,5 +1,8 @@
 # Vector POC
 
+## Video of usage in ArgoCD
+https://github.com/user-attachments/assets/5cee2029-d004-4f17-be7a-7774300411e8
+
 ## Architecture
 ```
 Backend Service -> Vector Agent -> PostgreSQL
