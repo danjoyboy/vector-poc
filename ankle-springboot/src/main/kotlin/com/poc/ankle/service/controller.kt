@@ -17,14 +17,15 @@ class HealthCheckController {
 
     @GetMapping("/gas")
     fun gas(
-        @ModelAttribute person: Person
+        @ModelAttribute payload: Payload
     ): Map<String, String> {
-        logger.info("11111 incoming gas! $person")
-        return mapOf("person" to person.toString())
+        logger.info("11111 incoming payload! $payload")
+        return mapOf("person" to payload.toString())
     }
 }
 
-data class Person(
-    val name: String = "",
-    val age: Int = 0,
+data class Payload(
+    val type: String = "UNKNOWN",
+    val text: String = "",
+    val number: Int = 0,
 )

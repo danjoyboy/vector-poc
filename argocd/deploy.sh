@@ -99,15 +99,50 @@ function stop_argocd() {
         print_warning "No port-forward process found"
     fi
 
-    # Check if namespace exists
+    # Check if ArgoCD namespace exists
     if kubectl get namespace $NAMESPACE &> /dev/null; then
+        print_status "Cleaning up ArgoCD-tracked applications..."
+
+        # Get all ArgoCD Applications and clean up their namespaces
+        local APPS=$(kubectl get applications -n $NAMESPACE -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+        if [ ! -z "$APPS" ]; then
+            for APP in $APPS; do
+                local APP_NAMESPACE=$(kubectl get application $APP -n $NAMESPACE -o jsonpath='{.spec.destination.namespace}' 2>/dev/null)
+                if [ ! -z "$APP_NAMESPACE" ] && [ "$APP_NAMESPACE" != "$NAMESPACE" ]; then
+                    print_status "Cleaning up application $APP in namespace $APP_NAMESPACE..."
+
+                    # For apps that might have different label patterns, try multiple approaches
+                    print_status "Removing all resources for $APP..."
+
+                    # Handle different app naming patterns
+                    if [ "$APP" == "postgres" ]; then
+                        kubectl delete all,configmap,secret,pvc -l app=postgres -n $APP_NAMESPACE 2>/dev/null || true
+                    elif [ "$APP" == "vector" ]; then
+                        kubectl delete all,configmap,secret,pvc -l app=vector-poc-backend -n $APP_NAMESPACE 2>/dev/null || true
+                    else
+                        # Try with app label
+                        kubectl delete all,configmap,secret,pvc -l app=$APP -n $APP_NAMESPACE 2>/dev/null || true
+                        # Try with app.kubernetes.io/name label
+                        kubectl delete all,configmap,secret,pvc -l app.kubernetes.io/name=$APP -n $APP_NAMESPACE 2>/dev/null || true
+                    fi
+
+                    # If namespace only contains our app resources, delete the namespace
+                    local REMAINING_RESOURCES=$(kubectl get all -n $APP_NAMESPACE 2>/dev/null | wc -l)
+                    if [ "$REMAINING_RESOURCES" -le 1 ]; then
+                        print_status "Deleting empty application namespace $APP_NAMESPACE..."
+                        kubectl delete namespace $APP_NAMESPACE 2>/dev/null || true
+                    fi
+                fi
+            done
+        fi
+
         print_status "Removing ArgoCD installation..."
         kubectl delete -n $NAMESPACE -f https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_VERSION/manifests/install.yaml 2>/dev/null || true
 
         print_status "Deleting ArgoCD namespace..."
         kubectl delete namespace $NAMESPACE --wait=true
 
-        print_status "ArgoCD stopped and removed successfully!"
+        print_status "ArgoCD and all tracked applications stopped and removed successfully!"
     else
         print_warning "ArgoCD namespace not found"
     fi
@@ -238,9 +273,14 @@ function deploy_single_app() {
         kubectl create namespace $APP_NAMESPACE
     fi
 
-    # Apply all YAML files in the directory
-    print_status "Applying manifests from $DIR/ to namespace $APP_NAMESPACE..."
-    kubectl apply -f "$DIR/" 2>&1 | grep -v "kustomization.yaml" || true
+    # Apply manifests using kustomize if available, otherwise regular apply
+    if [ -f "$DIR/kustomization.yaml" ]; then
+        print_status "Applying manifests using kustomize from $DIR/ to namespace $APP_NAMESPACE..."
+        kubectl apply -k "$DIR/" 2>&1 || true
+    else
+        print_status "Applying manifests from $DIR/ to namespace $APP_NAMESPACE..."
+        kubectl apply -f "$DIR/" 2>&1 || true
+    fi
 
     # Create ArgoCD Application to track this deployment
     if kubectl get namespace $NAMESPACE &> /dev/null; then
@@ -338,7 +378,26 @@ function remove_single_app() {
 
     # Delete resources
     if kubectl get namespace $APP_NAMESPACE &> /dev/null; then
-        kubectl delete -f "$DIR/" 2>/dev/null || true
+        # Check if kustomization.yaml exists
+        if [ -f "$DIR/kustomization.yaml" ]; then
+            print_status "Removing resources using kustomize..."
+            kubectl delete -k "$DIR/" 2>/dev/null || true
+        else
+            kubectl delete -f "$DIR/" 2>/dev/null || true
+        fi
+
+        # Clean up ConfigMaps related to this app
+        print_status "Cleaning up ConfigMaps for $APP_NAME..."
+        kubectl delete configmap -l app=$APP_NAME -n $APP_NAMESPACE 2>/dev/null || true
+
+        # Clean up Secrets related to this app
+        print_status "Cleaning up Secrets for $APP_NAME..."
+        kubectl delete secret -l app=$APP_NAME -n $APP_NAMESPACE 2>/dev/null || true
+
+        # Delete PVCs related to this app
+        print_status "Cleaning up persistent volumes for $APP_NAME..."
+        kubectl delete pvc -l app=$APP_NAME -n $APP_NAMESPACE 2>/dev/null || true
+
         print_status "$APP_NAME removed successfully!"
     else
         print_warning "Namespace $APP_NAMESPACE not found"

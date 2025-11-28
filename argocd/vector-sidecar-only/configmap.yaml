@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+  namespace: vector-poc
+  labels:
+    app: vector-poc-backend
+    component: vector
+data:
+  vector.yaml: |
+    # Vector sidecar configuration for Kubernetes
+    data_dir: /var/lib/vector
+
+    sources:
+      app_logs:
+        type: file
+        include:
+          - /var/log/app/*.log
+        read_from: end
+        glob_minimum_cooldown_ms: 1000
+        max_line_bytes: 102400
+
+    transforms:
+      parse_logs:
+        type: remap
+        inputs:
+          - app_logs
+        source: |
+          # Parse JSON if applicable
+          if starts_with(string!(.message), "{") {
+            parsed, err = parse_json(.message)
+            if err == null {
+              . = merge(., parsed) ?? .
+            }
+          }
+
+          # Add metadata
+          .timestamp = now()
+          .service = "vector-poc-backend"
+          .namespace = "${KUBERNETES_NAMESPACE:vector-poc}"
+          .pod_name = "${HOSTNAME}"
+          .pod_ip = "${POD_IP}"
+          .node_name = "${NODE_NAME}"
+          .environment = "kubernetes"
+
+          # Extract log level
+          if contains(string!(.message), "INFO") {
+            .level = "INFO"
+          } else if contains(string!(.message), "ERROR") {
+            .level = "ERROR"
+          } else if contains(string!(.message), "WARN") {
+            .level = "WARN"
+          } else if contains(string!(.message), "DEBUG") {
+            .level = "DEBUG"
+          }
+
+      filter_logs:
+        type: filter
+        inputs:
+          - parse_logs
+        condition:
+          type: vrl
+          source: |
+            .message != "" && .message != null
+
+    sinks:
+      console:
+        type: console
+        inputs:
+          - filter_logs
+        encoding:
+          codec: json
+        target: stdout
+
+      file:
+        type: file
+        inputs:
+          - filter_logs
+        path: /var/log/vector/logs-%Y%m%d.json
+        encoding:
+          codec: json
+          method: newline_delimited
+
+    api:
+      enabled: true
+      address: "0.0.0.0:8686"
+
+    healthchecks:
+      enabled: true
+      require_healthy: true

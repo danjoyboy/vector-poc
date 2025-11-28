@@ -75,6 +75,23 @@ transforms:
       if exists(.message) && length(string!(.message)) > 4000 {
         .message = slice!(string!(.message), 0, 4000)
       }
+  
+  prepare_for_postgres_user_action:
+    type: remap
+    inputs:
+      - filter_logs
+    source: |
+      # Prepare data for PostgreSQL
+      .id = uuid_v4()
+      .created_at = format_timestamp!(.timestamp, "%Y-%m-%d %H:%M:%S", "UTC")
+
+      # Ensure all required fields exist with defaults
+      if !exists(.level) { .level = "INFO" }
+
+      # Truncate message if too long
+      if exists(.message) && length(string!(.message)) > 4000 {
+        .message = slice!(string!(.message), 0, 4000)
+      }
 
 sinks:
   console:
@@ -100,6 +117,13 @@ sinks:
       - prepare_for_postgres
     endpoint: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DATABASE}"
     table: "application_logs"
+
+  postgres_user_action:
+    type: postgres
+    inputs:
+      - prepare_for_postgres
+    endpoint: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DATABASE}"
+    table: "user_action"
 
 api:
   enabled: true
